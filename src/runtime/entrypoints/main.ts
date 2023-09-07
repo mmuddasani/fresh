@@ -16,6 +16,7 @@ function createRootFragment(
   endMarker: Text,
 ) {
   replaceNode = ([] as Node[]).concat(replaceNode);
+  console.log("Root", parent, replaceNode, endMarker);
   // @ts-ignore this is fine
   return parent.__k = {
     nodeType: 1,
@@ -391,7 +392,12 @@ options.vnode = (vnode) => {
   if (originalHook) originalHook(vnode);
 };
 
-console.log("INIT");
+// Keep track of history state to apply forward or backward animations
+let index = history.state?.index || 0;
+if (!history.state) {
+  history.replaceState({ index }, document.title);
+}
+
 document.addEventListener("click", async (e) => {
   let el = e.target;
   if (el && el instanceof HTMLElement) {
@@ -418,6 +424,9 @@ document.addEventListener("click", async (e) => {
 
       if (partial) {
         e.preventDefault();
+        index++;
+        history.pushState({ index }, "", el.href);
+
         const res = await fetch(partial);
         const text = await res.text();
         const doc2 = new DOMParser().parseFromString(text, "text/html");
