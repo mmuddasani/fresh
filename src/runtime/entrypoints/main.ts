@@ -10,10 +10,13 @@ import {
 import { assetHashingHook } from "../utils.ts";
 import { PartialSlot } from "$fresh/src/runtime/PartialSlot.tsx";
 
+// Changing this to true makes debugging easier
+const KEEP_COMMENTS = false;
+
 function createRootFragment(
   parent: Element,
   replaceNode: Node | Node[],
-  endMarker: Text,
+  endMarker: Comment | Text,
 ) {
   replaceNode = ([] as Node[]).concat(replaceNode);
   console.log("Root", parent, replaceNode, endMarker);
@@ -106,6 +109,36 @@ interface Marker {
   endNode: Comment | null;
 }
 
+function replaceWithText(node: Node | Comment) {
+  const text = new Text("");
+  node.parentNode!.insertBefore(text, node);
+  node.parentNode!.removeChild(node);
+  return text;
+}
+
+/**
+ * Hide `<--frsh-* -->` comment nodes, so that it doesn't confuse users
+ * in browser DevTools. We still need markers to function though, so we
+ * simply replace comment markers with empty Text nodes which are invisible
+ * in DevTools. We need markers because multiple islands, slots or partials
+ * can share the same parent node.
+ */
+function hideMarkers(marker: Marker, sib: Node): Node | null {
+  const next = sib.nextSibling;
+
+  if (marker.startNode) {
+    const text = replaceWithText(marker.startNode);
+    marker.startNode = text;
+  }
+
+  if (marker.endNode) {
+    const text = replaceWithText(marker.endNode);
+    marker.endNode = text;
+  }
+
+  return next;
+}
+
 /**
  * Revive islands and stich together any server rendered content.
  *
@@ -170,18 +203,16 @@ function _walkInner(
         vnodeStack.push(h(ServerComponent, { key: comment }));
       } else if (comment.startsWith("frsh-partial")) {
         const name = comment.slice("frsh-partial:".length);
-        // markerStack.push({
-        //   startNode: sib,
-        //   text: comment,
-        //   endNode: null,
-        //   kind: MarkerKind.Partial,
-        // });
-        partials.set(name, [sib, sib]);
+        const node = KEEP_COMMENTS ? sib : replaceWithText(sib);
+        sib = node;
+        partials.set(name, [node, node]);
         console.log("partial", name, sib);
       } else if (comment.startsWith("/frsh-partial")) {
         const name = comment.slice("/frsh-partial:".length);
         const state = partials.get(name);
-        if (state) state[1] = sib;
+        const node = sib = KEEP_COMMENTS ? sib : replaceWithText(sib);
+        if (state) state[1] = node;
+        sib = node;
         console.log(partials, name, sib);
       } else if (
         marker !== null && (
@@ -212,9 +243,9 @@ function _walkInner(
           }
 
           // Remove markers
-          marker.startNode?.remove();
-          sib = sib.nextSibling;
-          marker.endNode.remove();
+          if (!KEEP_COMMENTS) {
+            sib = hideMarkers(marker, sib);
+          }
           continue;
         } else if (marker.kind === MarkerKind.Island) {
           // We're ready to revive this island if it has
@@ -266,15 +297,12 @@ function _walkInner(
 
             const parentNode = sib.parentNode! as HTMLElement;
 
-            // We need an end marker for islands because multiple
-            // islands can share the same parent node. Since
-            // islands are root-level render calls any calls to
-            // `.appendChild` would lead to a wrong result.
-            const endMarker = new Text("");
-            parentNode.insertBefore(
-              endMarker,
-              marker.endNode,
-            );
+            if (!KEEP_COMMENTS) {
+              sib = hideMarkers(marker, sib);
+            }
+            console.log("af sib", sib);
+
+            const endMarker = marker.endNode;
 
             const _render = () =>
               render(
@@ -295,10 +323,6 @@ function _walkInner(
               ? scheduler!.postTask(_render)
               : setTimeout(_render, 0);
 
-            // Remove markers
-            marker.startNode?.remove();
-            sib = sib.nextSibling;
-            marker.endNode.remove();
             continue;
           } else if (parent?.kind === MarkerKind.Slot) {
             // Treat the island as a standard component when it
@@ -307,10 +331,6 @@ function _walkInner(
             const parent = vnodeStack[vnodeStack.length - 1]!;
             addPropsChild(parent, vnode);
           }
-        } else if (marker.kind === MarkerKind.Partial) {
-          const name = comment.slice("/frsh-partial:".length);
-
-          console.log(marker, comment, name);
         }
       } else if (comment.startsWith("frsh")) {
         // We're opening a new island
