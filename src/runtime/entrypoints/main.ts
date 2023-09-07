@@ -8,6 +8,7 @@ import {
   VNode,
 } from "preact";
 import { assetHashingHook } from "../utils.ts";
+import { PartialSlot } from "$fresh/src/runtime/PartialSlot.tsx";
 
 function createRootFragment(
   parent: Element,
@@ -84,9 +85,12 @@ function addPropsChild(parent: VNode, vnode: ComponentChildren) {
   }
 }
 
+const partials = new Map<string, [Comment | null, Comment | null]>();
+
 const enum MarkerKind {
   Island,
   Slot,
+  Partial,
 }
 
 interface Marker {
@@ -150,6 +154,8 @@ function _walkInner(
         comment = comment.slice(3, -2);
       }
 
+      console.log("COMMENT", comment);
+
       if (comment.startsWith("frsh-slot")) {
         // Note: Nested slots are not possible as they're flattened
         // already on the server.
@@ -161,6 +167,21 @@ function _walkInner(
         });
         // @ts-ignore TS gets confused
         vnodeStack.push(h(ServerComponent, { key: comment }));
+      } else if (comment.startsWith("frsh-partial")) {
+        const name = comment.slice("frsh-partial:".length);
+        // markerStack.push({
+        //   startNode: sib,
+        //   text: comment,
+        //   endNode: null,
+        //   kind: MarkerKind.Partial,
+        // });
+        partials.set(name, [sib, sib]);
+        console.log("partial", name, sib);
+      } else if (comment.startsWith("/frsh-partial")) {
+        const name = comment.slice("/frsh-partial:".length);
+        const state = partials.get(name);
+        if (state) state[1] = sib;
+        console.log(partials, name, sib);
       } else if (
         marker !== null && (
           comment.startsWith("/frsh") ||
@@ -285,6 +306,10 @@ function _walkInner(
             const parent = vnodeStack[vnodeStack.length - 1]!;
             addPropsChild(parent, vnode);
           }
+        } else if (marker.kind === MarkerKind.Partial) {
+          const name = comment.slice("/frsh-partial:".length);
+
+          console.log(marker, comment, name);
         }
       } else if (comment.startsWith("frsh")) {
         // We're opening a new island
@@ -365,3 +390,124 @@ options.vnode = (vnode) => {
   assetHashingHook(vnode);
   if (originalHook) originalHook(vnode);
 };
+
+console.log("INIT");
+document.addEventListener("click", async (e) => {
+  let el = e.target;
+  if (el && el instanceof HTMLElement) {
+    // Check if we clicked inside an anchor link
+    if (el.nodeName !== "A") {
+      el = el.closest("a");
+    }
+
+    if (
+      // Check that we're still dealing with an anchor tag
+      el && el instanceof HTMLAnchorElement &&
+      // Check if it's an internal link
+      el.href && (!el.target || el.target === "_self") &&
+      el.origin === location.origin &&
+      // Check if it was a left click and not a right click
+      e.button === 0 &&
+      // Check that the user doesn't press a key combo to open the
+      // link in a new tab or something
+      !(e.ctrlKey || e.metaKey || e.altKey || e.shiftKey || e.button) &&
+      // Check that the event isn't aborted already
+      !e.defaultPrevented
+    ) {
+      const partial = el.getAttribute("fh-partial");
+
+      if (partial) {
+        e.preventDefault();
+        const res = await fetch(partial);
+        const text = await res.text();
+        const doc2 = new DOMParser().parseFromString(text, "text/html");
+
+        console.log(doc2);
+        const ctx: PartialWalkCtx = {
+          partials: new Map(),
+          stack: [],
+        };
+        walk(doc2.body, ctx);
+
+        // TODO: Wire into vnode
+        // Inject partials into active page
+        ctx.partials.forEach((value, key) => {
+          const current = partials.get(key);
+          if (!current) {
+            console.log(`Unknown partial: ${key}`);
+            return;
+          } else if (current[0] === null || current[1] === null) {
+            console.log(`Missing partial boundary:`, current);
+            return;
+          }
+
+          // TODO: Unmount islands
+          // TODO: DOM diff?
+          // Delete old nodes
+          const start = current[0];
+          let item = start.nextSibling;
+          const end = current[1];
+          while (item !== null && item !== end) {
+            const node = item;
+            item = item.nextSibling;
+            node.remove();
+          }
+
+          // Insert new nodes
+          const insertStart = value[0];
+          item = insertStart.nextSibling;
+          const insertEnd = value[1];
+          const parent = start.parentNode!;
+          while (item !== null && item !== insertEnd) {
+            const next = item.nextSibling;
+            parent.insertBefore(item, end);
+            item = next;
+          }
+
+          console.log(key, value, current);
+        });
+        console.log(ctx);
+      }
+    }
+  }
+});
+
+const enum PartialWalkKind {
+  PARTIAL,
+}
+
+interface PartialWalkCtx {
+  partials: Map<string, [Comment, Comment]>;
+  stack: PartialWalkKind[];
+}
+
+export function initPartials() {
+  const ctx: PartialWalkCtx = {
+    partials: new Map(),
+    stack: [],
+  };
+  console.log("init partials");
+  walk(document.body, ctx);
+  console.log(ctx);
+}
+
+function walk(node: HTMLElement | Text | Comment, ctx: PartialWalkCtx) {
+  if (node.nodeType === Node.TEXT_NODE) {
+    return;
+  } else if (isCommentNode(node)) {
+    if (node.data.startsWith("frsh-partial")) {
+      const [_, name] = node.data.split(":");
+      ctx.partials.set(name, [node, node]);
+    } else if (node.data.startsWith("/frsh-partial")) {
+      const [_, name] = node.data.split(":");
+      const state = ctx.partials.get(name);
+      if (state) state[1] = node;
+    }
+  } else {
+    for (let i = 0; i < node.childNodes.length; i++) {
+      // deno-lint-ignore no-explicit-any
+      const child = node.childNodes[i] as any;
+      walk(child, ctx);
+    }
+  }
+}

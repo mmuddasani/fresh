@@ -9,6 +9,7 @@ import {
   type VNode,
 } from "preact";
 import { assetHashingHook } from "../../runtime/utils.ts";
+import { PartialSlot } from "../../runtime/PartialSlot.tsx";
 import { renderToString } from "preact-render-to-string";
 import { RenderState } from "./state.ts";
 import { Island } from "../types.ts";
@@ -277,6 +278,12 @@ options.__b = (vnode: VNode<Record<string, unknown>>) => {
             `frsh-${island.id}:${island.exportName}:${islandProps.length - 1}`,
           );
         };
+        // deno-lint-ignore no-explicit-any
+      } else if (vnode.type === (PartialSlot as any)) {
+        vnode.props.children = wrapWithMarker(
+          vnode.props.children,
+          `frsh-partial:${vnode.props.name}`,
+        );
       }
     }
   }
