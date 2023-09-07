@@ -437,7 +437,7 @@ document.addEventListener("click", async (e) => {
             console.error(`Unknown partial: ${key}`);
             return;
           } else if (current[0] === null || current[1] === null) {
-            console.error(`Missing partial boundary:`, current);
+            console.error(`Missing partial boundary for "${key}":`, current);
             return;
           }
 
