@@ -434,10 +434,10 @@ document.addEventListener("click", async (e) => {
         ctx.partials.forEach((value, key) => {
           const current = partials.get(key);
           if (!current) {
-            console.log(`Unknown partial: ${key}`);
+            console.error(`Unknown partial: ${key}`);
             return;
           } else if (current[0] === null || current[1] === null) {
-            console.log(`Missing partial boundary:`, current);
+            console.error(`Missing partial boundary:`, current);
             return;
           }
 
