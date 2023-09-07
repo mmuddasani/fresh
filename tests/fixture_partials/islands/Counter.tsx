@@ -4,9 +4,7 @@ export default function Counter() {
   const sig = useSignal(0);
   return (
     <div class="island">
-      <p>
-        <output>{sig.value}</output>
-      </p>
+      <p id="output">{sig.value}</p>
       <button
         onClick={() => sig.value += 1}
       >
