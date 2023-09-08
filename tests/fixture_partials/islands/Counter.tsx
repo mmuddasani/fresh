@@ -5,10 +5,8 @@ export default function Counter() {
   return (
     <div class="island">
       <p id="output">{sig.value}</p>
-      <button
-        onClick={() => sig.value += 1}
-      >
-        update {sig}
+      <button onClick={() => sig.value += 1}>
+        update
       </button>
     </div>
   );

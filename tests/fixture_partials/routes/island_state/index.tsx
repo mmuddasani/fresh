@@ -1,5 +1,5 @@
 import { PartialSlot } from "$fresh/runtime.ts";
-import Counter from "../islands/Counter.tsx";
+import Counter from "../../islands/Counter.tsx";
 
 export default function SlotDemo() {
   return (
@@ -12,9 +12,11 @@ export default function SlotDemo() {
           </div>
         </PartialSlot>
       </div>
-      <a href="/island_state/injected" fh-partial="/partials/island_state">
-        click me
-      </a>
+      <p>
+        <a href="/island_state/injected" fh-partial="/island_state/partial">
+          click me
+        </a>
+      </p>
     </div>
   );
 }

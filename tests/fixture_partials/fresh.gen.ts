@@ -3,19 +3,21 @@
 // This file is automatically updated during development when running `dev.ts`.
 
 import * as $0 from "./routes/index.tsx";
-import * as $1 from "./routes/island_state.tsx";
-import * as $2 from "./routes/no_islands.tsx";
-import * as $3 from "./routes/partials/island_state.tsx";
-import * as $4 from "./routes/partials/no_islands.tsx";
+import * as $1 from "./routes/island_state/index.tsx";
+import * as $2 from "./routes/island_state/injected.tsx";
+import * as $3 from "./routes/island_state/partial.tsx";
+import * as $4 from "./routes/no_islands.tsx";
+import * as $5 from "./routes/partials/no_islands.tsx";
 import * as $$0 from "./islands/Counter.tsx";
 
 const manifest = {
   routes: {
     "./routes/index.tsx": $0,
-    "./routes/island_state.tsx": $1,
-    "./routes/no_islands.tsx": $2,
-    "./routes/partials/island_state.tsx": $3,
-    "./routes/partials/no_islands.tsx": $4,
+    "./routes/island_state/index.tsx": $1,
+    "./routes/island_state/injected.tsx": $2,
+    "./routes/island_state/partial.tsx": $3,
+    "./routes/no_islands.tsx": $4,
+    "./routes/partials/no_islands.tsx": $5,
   },
   islands: {
     "./islands/Counter.tsx": $$0,
