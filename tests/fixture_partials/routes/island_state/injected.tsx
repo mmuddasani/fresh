@@ -1,3 +1,10 @@
-export default function SlotDemo() {
-  return <h1>it doesn't work</h1>;
-}
+import { defineRoute } from "$fresh/src/server/defines.ts";
+
+export default defineRoute(() => {
+  return new Response("", {
+    status: 302,
+    headers: {
+      Location: "/island_state",
+    },
+  });
+});
