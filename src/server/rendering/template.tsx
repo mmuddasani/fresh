@@ -1,4 +1,4 @@
-import { RenderState } from "./state.ts";
+import { RenderState, RenderType } from "./state.ts";
 import { setRenderState } from "./preact_hooks.ts";
 import { renderToString } from "preact-render-to-string";
 import { Fragment, h } from "preact";
@@ -72,6 +72,8 @@ export function renderOuterDocument(
     headVNodes,
   } = state;
 
+  const isPartial = state.renderType === RenderType.PARTIAL;
+
   const page = h(
     "html",
     docHtml ?? { lang: opts.lang },
@@ -79,7 +81,7 @@ export function renderOuterDocument(
       "head",
       docHead,
       !renderedHtmlTag ? h("meta", { charSet: "utf-8" }) : null,
-      !renderedHtmlTag
+      !renderedHtmlTag && !isPartial
         ? (h("meta", {
           name: "viewport",
           content: "width=device-width, initial-scale=1.0",
@@ -87,9 +89,11 @@ export function renderOuterDocument(
         : null,
       docTitle,
       docHeadNodes.map((node) => h(node.type, node.props)),
-      opts.preloads.map((src) =>
-        h("link", { rel: "modulepreload", href: src })
-      ),
+      !isPartial
+        ? opts.preloads.map((src) =>
+          h("link", { rel: "modulepreload", href: src })
+        )
+        : null,
       opts.moduleScripts.map(([src, nonce]) =>
         h("script", { src: src, nonce, type: "module" })
       ),

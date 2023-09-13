@@ -13,6 +13,11 @@ export interface RenderStateRouteOptions {
   params: Record<string, string | string[]>;
 }
 
+export const enum RenderType {
+  NORMAL,
+  PARTIAL,
+}
+
 export class RenderState {
   // deno-lint-ignore no-explicit-any
   componentStack: any[];
@@ -35,17 +40,20 @@ export class RenderState {
   // Preact state
   ownerStack: VNode[] = [];
   owners = new Map<VNode, VNode>();
+  renderType: RenderType;
 
   constructor(
     routeOptions: RenderStateRouteOptions,
     // deno-lint-ignore no-explicit-any
     componentStack: any[],
+    renderType: RenderType,
     csp?: ContentSecurityPolicy,
     error?: unknown,
   ) {
     this.routeOptions = routeOptions;
     this.csp = csp;
     this.componentStack = componentStack;
+    this.renderType = renderType;
 
     if (error) this.routeOptions.error = error;
   }

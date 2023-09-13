@@ -1,4 +1,5 @@
 import {
+  Component,
   ComponentChildren,
   ComponentType,
   Fragment,
@@ -8,7 +9,6 @@ import {
   VNode,
 } from "preact";
 import { assetHashingHook } from "../utils.ts";
-import { PartialSlot } from "$fresh/src/runtime/PartialSlot.tsx";
 
 // Changing this to true makes debugging easier
 const KEEP_COMMENTS = false;
@@ -89,7 +89,43 @@ function addPropsChild(parent: VNode, vnode: ComponentChildren) {
   }
 }
 
-const partials = new Map<string, [Comment | null, Comment | null]>();
+interface ComponentInstance {
+  setState(): void;
+}
+
+interface RenderTreeItem {
+  name: string;
+  component: ComponentInstance | null;
+  startMarker: Comment | Text | null;
+  endMarker: Comment | Text | null;
+}
+
+type RenderTree = {
+  byMarker: Map<Comment | Text, RenderTreeItem>;
+  items: Map<string, RenderTreeItem>;
+};
+
+const renderTree: RenderTree = {
+  byMarker: new Map(),
+  items: new Map(),
+};
+
+class PartialSlot
+  extends Component<{ name: string; children?: ComponentChildren }> {
+  componentDidMount() {
+    // TODO
+    console.log("mounting partial", this.props.name);
+  }
+
+  componentWillUnmount() {
+    // TODO
+    console.log("unmounting partial", this.props.name);
+  }
+
+  render() {
+    return this.props.children;
+  }
+}
 
 const enum MarkerKind {
   Island,
@@ -205,15 +241,40 @@ function _walkInner(
         const name = comment.slice("frsh-partial:".length);
         const node = KEEP_COMMENTS ? sib : replaceWithText(sib);
         sib = node;
-        partials.set(name, [node, node]);
-        console.log("partial", name, sib);
-      } else if (comment.startsWith("/frsh-partial")) {
+
+        const renderItem: RenderTreeItem = {
+          name,
+          startMarker: node,
+          endMarker: node,
+          component: null,
+        };
+
+        renderTree.items.set(name, renderItem);
+        renderTree.byMarker.set(node, renderItem);
+        console.log(
+          "partial",
+          name,
+        );
+        markerStack.push({
+          startNode: node,
+          text: comment,
+          endNode: null,
+          kind: MarkerKind.Partial,
+        });
+        vnodeStack.push(h(PartialSlot, { name }));
+      } else if (comment.startsWith("/frsh-partial123")) {
         const name = comment.slice("/frsh-partial:".length);
-        const state = partials.get(name);
+        const state = renderTree.items.get(name);
         const node = sib = KEEP_COMMENTS ? sib : replaceWithText(sib);
-        if (state) state[1] = node;
+        if (state) {
+          state.endMarker = node;
+          renderTree.byMarker.set(node, state);
+        }
         sib = node;
-        console.log(partials, name, sib);
+        console.log(renderTree, name, sib);
+
+        // TODO: Attach children?
+        vnodeStack.pop();
       } else if (
         marker !== null && (
           comment.startsWith("/frsh") ||
@@ -246,20 +307,12 @@ function _walkInner(
           if (!KEEP_COMMENTS) {
             sib = hideMarkers(marker, sib);
           }
-          continue;
         } else if (marker.kind === MarkerKind.Island) {
           // We're ready to revive this island if it has
           // no roots of its own. Otherwise we'll treat it
           // as a standard component
           if (markerStack.length === 0) {
-            const children: Node[] = [];
-
-            let child: Node | null = marker.startNode;
-            while (
-              (child = child!.nextSibling) !== null && child !== marker.endNode
-            ) {
-              children.push(child);
-            }
+            const children = collectDomChildren(marker);
 
             const vnode = vnodeStack[vnodeStack.length - 1];
 
@@ -300,37 +353,61 @@ function _walkInner(
             if (!KEEP_COMMENTS) {
               sib = hideMarkers(marker, sib);
             }
-            console.log("af sib", sib);
 
             const endMarker = marker.endNode;
 
-            const _render = () =>
-              render(
-                vnode,
-                createRootFragment(
-                  parentNode,
-                  children,
-                  endMarker,
-                  // deno-lint-ignore no-explicit-any
-                ) as any as HTMLElement,
-              );
-
-            "scheduler" in window
-              // `scheduler.postTask` is async but that can easily
-              // fire in the background. We don't want waiting for
-              // the hydration of an island block us.
-              // @ts-ignore scheduler API is not in types yet
-              ? scheduler!.postTask(_render)
-              : setTimeout(_render, 0);
+            console.log("render island");
+            renderRoot(
+              vnode,
+              createRootFragment(
+                parentNode,
+                children,
+                endMarker,
+              ),
+            );
 
             continue;
-          } else if (parent?.kind === MarkerKind.Slot) {
+          } else if (
+            parent?.kind === MarkerKind.Slot ||
+            parent?.kind === MarkerKind.Partial
+          ) {
             // Treat the island as a standard component when it
             // has an island parent or a slot parent
             const vnode = vnodeStack.pop();
-            const parent = vnodeStack[vnodeStack.length - 1]!;
-            addPropsChild(parent, vnode);
+            const parentVNode = vnodeStack[vnodeStack.length - 1]!;
+            addPropsChild(parentVNode, vnode);
           }
+        } else if (marker.kind === MarkerKind.Partial) {
+          // Treat partial as standard component when it has parents
+          if (parent !== null) {
+            const vnode = vnodeStack.pop();
+            const parentVNode = vnodeStack[vnodeStack.length - 1]!;
+            addPropsChild(parentVNode, vnode);
+          } else {
+            // This is the top parent, need to render it
+            const children = collectDomChildren(marker);
+            const vnode = vnodeStack[vnodeStack.length - 1];
+            vnodeStack.pop();
+            console.log("render", vnodeStack.slice());
+
+            const parentNode = sib.parentNode! as HTMLElement;
+
+            if (!KEEP_COMMENTS) {
+              sib = hideMarkers(marker, sib);
+            }
+
+            const endMarker = marker.endNode;
+            console.log(endMarker!.parentNode);
+            renderRoot(
+              vnode,
+              createRootFragment(
+                parentNode,
+                children,
+                endMarker,
+              ),
+            );
+          }
+          console.log("PARTIAL", marker, parent);
         }
       } else if (comment.startsWith("frsh")) {
         // We're opening a new island
@@ -349,7 +426,8 @@ function _walkInner(
     } else if (isTextNode(sib)) {
       const parentVNode = vnodeStack[vnodeStack.length - 1]!;
       if (
-        marker !== null && marker.kind === MarkerKind.Slot
+        marker !== null && (marker.kind === MarkerKind.Slot ||
+          marker.kind === MarkerKind.Partial)
       ) {
         addPropsChild(parentVNode, sib.data);
       }
@@ -357,7 +435,9 @@ function _walkInner(
       const parentVNode = vnodeStack[vnodeStack.length - 1];
       if (
         marker !== null &&
-        marker.kind === MarkerKind.Slot && isElementNode(sib)
+        (marker.kind === MarkerKind.Slot ||
+          marker.kind === MarkerKind.Partial) &&
+        isElementNode(sib)
       ) {
         // Parse the server rendered DOM into vnodes that we can
         // attach to the virtual-dom tree. In the future, once
@@ -395,6 +475,7 @@ function _walkInner(
       if (
         marker !== null &&
         (marker.kind === MarkerKind.Slot ||
+          marker.kind === MarkerKind.Partial ||
           markerStack.length > 1 &&
             markerStack[markerStack.length - 2].kind === MarkerKind.Island)
       ) {
@@ -402,8 +483,45 @@ function _walkInner(
       }
     }
 
-    sib = sib.nextSibling;
+    if (sib !== null) {
+      sib = sib.nextSibling;
+    }
   }
+}
+
+/**
+ * Collect all sibling nodes between two dom markers
+ */
+function collectDomChildren(marker: Marker): Node[] {
+  const children: Node[] = [];
+
+  let child: Node | null = marker.startNode;
+  while (
+    (child = child!.nextSibling) !== null && child !== marker.endNode
+  ) {
+    children.push(child);
+  }
+  return children;
+}
+
+/**
+ * Kick of rendering of a root vnode
+ */
+function renderRoot(vnode: VNode, root: ReturnType<typeof createRootFragment>) {
+  const _render = () =>
+    render(
+      vnode,
+      // deno-lint-ignore no-explicit-any
+      root as any,
+    );
+
+  "scheduler" in window
+    // `scheduler.postTask` is async but that can easily
+    // fire in the background. We don't want waiting for
+    // the hydration of an island block us.
+    // @ts-ignore scheduler API is not in types yet
+    ? scheduler!.postTask(_render)
+    : setTimeout(_render, 0);
 }
 
 const originalHook = options.vnode;
@@ -447,25 +565,39 @@ document.addEventListener("click", async (e) => {
         index++;
         history.pushState({ index }, "", el.href);
 
-        const res = await fetch(partial);
-        const text = await res.text();
-        const doc2 = new DOMParser().parseFromString(text, "text/html");
+        const partialUrl = new URL(partial, location.origin);
+        partialUrl.searchParams.set("fresh-partial", "true");
 
-        console.log(doc2);
+        const res = await fetch(partialUrl);
+        const doc = await parsePartialDoc(res);
+
+        // Bail out if the response isn't valid and do a full page
+        // load instead.
+        if (doc === null) {
+          return window.location.href = el.href;
+        }
+
+        console.log("NEW", doc);
+
+        return;
+        applyPartials(doc, renderTree);
+
         const ctx: PartialWalkCtx = {
           partials: new Map(),
           stack: [],
         };
-        walk(doc2.body, ctx);
+        walk(doc.body, ctx);
 
         // TODO: Wire into vnode
-        // Inject partials into active page
+        // Inject partials into a ctive page
         ctx.partials.forEach((value, key) => {
-          const current = partials.get(key);
+          const current = renderTree.items.get(key);
           if (!current) {
             console.error(`Unknown partial: ${key}`);
             return;
-          } else if (current[0] === null || current[1] === null) {
+          } else if (
+            current.startMarker === null || current.endMarker === null
+          ) {
             console.error(`Missing partial boundary for "${key}":`, current);
             return;
           }
@@ -473,9 +605,9 @@ document.addEventListener("click", async (e) => {
           // TODO: Unmount islands
           // TODO: DOM diff?
           // Delete old nodes
-          const start = current[0];
+          const start = current.startMarker;
           let item = start.nextSibling;
-          const end = current[1];
+          const end = current.endMarker;
           while (item !== null && item !== end) {
             const node = item;
             item = item.nextSibling;
@@ -500,6 +632,55 @@ document.addEventListener("click", async (e) => {
     }
   }
 });
+
+/**
+ * Parse the partial response and check if we are able to parse a valid HTML
+ * document.
+ */
+async function parsePartialDoc(res: Response): Promise<Document | null> {
+  if (!res.ok) {
+    return null;
+  }
+
+  const contentType = res.headers.get("Content-Type");
+  if (contentType !== "text/html; charset=utf-8") {
+    return null;
+  }
+
+  const text = await res.text();
+  try {
+    return new DOMParser().parseFromString(text, "text/html") as Document;
+  } catch (_err) {
+    return null;
+  }
+}
+
+/**
+ * Apply a partials HTML document to the current active one. The difference
+ * to the `revive()` function is that this patches the existing document. Any
+ * component nodes are updated via `.setState()` calls, so that DOM updates
+ * are all flushed in the same tick.
+ * TODO: Check view transitions
+ */
+function applyPartials(doc: Document, renderTree: RenderTree) {
+  // First we walk the document tree until we come across a partial marker.
+  diffDomChildren(doc.body, null, renderTree);
+}
+
+function diffDomChildren(
+  node: HTMLElement,
+  oldNode: HTMLElement | null,
+  renderTree: RenderTree,
+) {
+  const oldChildren = oldNode !== null ? Array.from(oldNode.childNodes) : [];
+
+  for (let i = 0; i < node.childNodes.length; i++) {
+    const child = node.childNodes[i];
+
+    if (isTextNode(node)) {
+    }
+  }
+}
 
 const enum PartialWalkKind {
   PARTIAL,

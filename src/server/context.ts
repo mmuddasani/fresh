@@ -58,6 +58,7 @@ import {
 } from "../build/mod.ts";
 import { InternalRoute } from "./router.ts";
 import { setAllIslands } from "./rendering/preact_hooks.ts";
+import { RenderType } from "$fresh/src/server/rendering/state.ts";
 
 const DEFAULT_CONN_INFO: ServeHandlerInfo = {
   localAddr: { transport: "tcp", hostname: "localhost", port: 8080 },
@@ -757,6 +758,7 @@ export class ServerContext {
         data,
         state: ctx?.state,
         error,
+        renderType: RenderType.NORMAL,
       });
 
       if (resp instanceof Response) {
@@ -789,6 +791,10 @@ export class ServerContext {
             throw new Error("This page does not have a component to render.");
           }
 
+          const renderType = /[?&]fresh-partial=true/.test(req.url)
+            ? RenderType.PARTIAL
+            : RenderType.NORMAL;
+
           const layouts = selectSharedRoutes(route.baseRoute, this.#layouts);
 
           const resp = await internalRender({
@@ -811,6 +817,7 @@ export class ServerContext {
             data,
             state: ctx?.state,
             error,
+            renderType,
           });
 
           if (resp instanceof Response) {

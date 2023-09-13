@@ -11,7 +11,7 @@ import {
 import { assetHashingHook } from "../../runtime/utils.ts";
 import { PartialSlot } from "../../runtime/PartialSlot.tsx";
 import { renderToString } from "preact-render-to-string";
-import { RenderState } from "./state.ts";
+import { RenderState, RenderType } from "./state.ts";
 import { Island } from "../types.ts";
 
 // These hooks are long stable, but when we originally added them we
@@ -269,7 +269,13 @@ options.__b = (vnode: VNode<Record<string, unknown>>) => {
             );
           }
 
-          const child = h(originalType, props);
+          // When we render partials we don't want to expand islands as we
+          // only care about the server rendered elements
+          const renderFn = current.renderType === RenderType.NORMAL
+            ? originalType
+            : Fragment;
+
+          const child = h(renderFn, props);
           patched.add(child);
           islandProps.push(props);
 

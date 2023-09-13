@@ -15,7 +15,7 @@ import {
 } from "./types.ts";
 import { NONE, UNSAFE_INLINE } from "../runtime/csp.ts";
 import { ContentSecurityPolicy } from "../runtime/csp.ts";
-import { RenderState } from "./rendering/state.ts";
+import { RenderState, RenderType } from "./rendering/state.ts";
 import { renderHtml, renderOuterDocument } from "./rendering/template.tsx";
 import { renderFreshTags } from "./rendering/fresh_tags.tsx";
 
@@ -40,6 +40,7 @@ export interface RenderOptions<Data> {
   state?: Record<string, unknown>;
   error?: unknown;
   lang?: string;
+  renderType: RenderType;
 }
 
 export type InnerRenderFunction = () => string;
@@ -243,6 +244,7 @@ export async function render<Data>(
       params: opts.params,
     },
     componentStack,
+    opts.renderType,
     csp,
     opts.error,
   );
